@@ -1,0 +1,6 @@
+shared.defaultArtifactId=bug_report
+shared.defaultClassPrefix=Bug_report
+shared.defaultGroupId=org.metaborg
+shared.defaultPackageId=mb.bug_report
+shared.defaultVersion=0.1.0
+stratego.languageStrategyAffix=bug_report

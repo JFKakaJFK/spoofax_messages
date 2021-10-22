@@ -1,0 +1,145 @@
+module main
+
+imports
+  signatures/start-sig
+
+signature
+  sorts
+    TYPE
+
+  constructors
+    CLASS : scope * ID -> TYPE
+    INT : TYPE
+  
+  relations
+    type : ID -> TYPE
+
+rules
+  int  : scope -> TYPE
+  int(s) = T :- 
+    typeOfType(s, "int") == T@CLASS(_, "int").
+
+rules
+  typeOfExp : scope * Exp -> TYPE
+  typeOfExp(s, e@Int(_)) = I :-
+    int(s) == I,
+    @e.type := I.
+  // For this rule, the presence of feedback messages changes the outcome
+  // #1 and #2 work, the other versions don't but only the feedback changes...
+  // #1
+  typeOfExp(s, e@Mul(l, r)) = int(s) :-
+    typeOfExp(s, l) == int(s),
+    typeOfExp(s, r) == int(s),
+    @e.type := int(s).
+  // #2
+  /*
+  typeOfExp(s, e@Mul(l, r)) = I :-
+    int(s) == I,
+    typeOfExp(s, l) == I,
+    typeOfExp(s, r) == I,
+    @e.type := I.
+  */
+  // #3 no vars no nothing in feedback and it breaks
+  /*
+  typeOfExp(s, e@Mul(l, r)) = I :-
+    int(s) == I,
+    typeOfExp(s, l) == I | error $[Expected "int"],
+    typeOfExp(s, r) == I | error $[Expected "int"],
+    @e.type := I.
+  */
+  // #4
+  /*
+  typeOfExp(s, e@Mul(l, r)) = I :-
+    int(s) == I,
+    typeOfExp(s, l) == I | error $[Expected type [I]]@l,
+    typeOfExp(s, r) == I | error $[Expected type [I]]@r,
+    @e.type := I.
+  */
+  // #5 try changes nothing (as it should)
+  /*
+  typeOfExp(s, e@Mul(l, r)) = I :-
+    int(s) == I,
+    try { typeOfExp(s, l) == I } | error $[Expected [I]],
+    try { typeOfExp(s, r) == I } | error $[Expected [I]],
+    @e.type := I.
+  */
+  // #6 it's not just errors
+  /*
+  typeOfExp(s, e@Mul(l, r)) = I :-
+    int(s) == I,
+    try { typeOfExp(s, l) == I } | warning $[Expected [I]],
+    try { typeOfExp(s, r) == I } | warning $[Expected [I]],
+    @e.type := I.
+  */
+  // #7 note too
+  /*
+  typeOfExp(s, e@Mul(l, r)) = I :-
+    int(s) == I,
+    try { typeOfExp(s, l) == I } | note $[Expected [I]],
+    try { typeOfExp(s, r) == I } | note $[Expected [I]],
+    @e.type := I.
+  */
+  // #8 sanity check for warning & note
+  // as expected, nothing happens
+  /*
+  typeOfExp(s, e@Mul(l, r)) = I :-
+    int(s) == I,
+    try { true } | note $[Note],
+    try { true } | warning $[Warn],
+    typeOfExp(s, l) == I,
+    typeOfExp(s, r) == I,
+    @e.type := I.
+  */
+  // #9 this seems like a workaround, 
+  // but also breaks if any parent constraint has a message (#11 or #12)
+  /*
+  typeOfExp(s, e@Mul(l, r)) = I :- {T1 T2}
+    int(s) == I,
+    typeOfExp(s, l) == T1,
+    typeOfExp(s, r) == T2,
+    try { T1 == I } | error $[Expected [I]]@l,
+    try { T2 == I } | error $[Expected [I]]@r,
+    @e.type := I.
+  */
+  // not having class types works, but defeats the purpose
+  /*
+  typeOfExp(s, e@Int(_)) = INT() :-
+    @e.type := INT().
+  typeOfExp(s, e@Mul(l, r)) = INT() :-
+    typeOfExp(s, l) == INT() | error $[Expected [INT()]]@l,
+    typeOfExp(s, r) == INT() | error $[Expected [INT()]]@r,
+    @e.type := INT().
+  */
+
+rules
+  programOk : Start
+  programOk(Exp(e)) :- {s int}
+    new s int,
+    declareClass(s, "int", int),
+    // #10 no message works
+    typeOfExp(s, e) == _.
+    // #11 fails
+    // typeOfExp(s, e) == _ | error $[Invalid expression].
+    // #12fails too
+    // try { typeOfExp(s, e) == _ } | error $[Invalid expression].
+
+rules
+  declareClass : scope * ID * scope
+  declareClass(s, id, c) :- {C}
+    !type[id, C@CLASS(c, id)] in s,
+    resolveType(s, id) == [(_, (_, C))]
+      | error $[Duplicate declaration of type [id]],
+    @id.type := C.
+  
+  resolveType : scope * ID -> list((path * (ID * TYPE)))
+  resolveType(s, id) = ps :-
+    query type
+      filter e and {id' :- id' == id}
+      min and true
+    in s |-> ps.
+  
+  typeOfType : scope * ID -> TYPE
+  typeOfType(s, id) = T :- {id'}
+    resolveType(s, id) == [(_, (id', T))]
+      | error $[Undefined type [id]],
+    @id.type := T, @id.ref := id'.

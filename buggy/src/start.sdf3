@@ -1,0 +1,51 @@
+module start
+
+context-free start-symbols
+
+  Start
+
+context-free sorts
+
+  Start
+  Decl
+  Stmt
+  Exp
+
+context-free syntax
+  Decl.Class = <class <ID>(<ID>)> {layout(single-line "class" ")")}
+  Decl.Var = <<id:ID> : <ty:ID>> {layout(single-line id ty)}
+  
+  Exp.Id   = ID
+  Exp.Int  = NUM
+  Exp.None = <None>
+  Exp.Op   = <<l:Exp> * <r:Exp>> {left, layout(single-line l r)}
+  
+  Stmt.Bnd = <<l:ID> = <r:Exp>>   {layout(single-line l r)}
+  Stmt.Exp = Exp
+  
+  Start.Seq  = <
+  <decls:Decl*>
+  <stmts:Stmt*>
+  > {layout(align decls stmts && align-list decls && align-list stmts)}
+
+lexical sorts ID NUM EOL
+
+lexical syntax
+  ID = [a-zA-Z]+
+  NUM = [0-9]+
+
+  LAYOUT = [\ \n\v\f\r\t]
+  LAYOUT = "#" [\n\r]* EOL
+  EOL = [\n\r]+
+
+lexical restrictions
+  ID  -/- [a-zA-Z]
+  NUM -/- [0-9]
+
+lexical syntax
+  ID = "None"  {reject}
+  ID = "class" {reject}
+
+context-free restrictions
+
+  LAYOUT? -/- [\ \n\v\f\r\t\#]

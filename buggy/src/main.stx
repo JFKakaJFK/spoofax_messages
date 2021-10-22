@@ -1,0 +1,185 @@
+module main
+
+imports
+
+  signatures/start-sig
+
+/*
+
+Apparently something causes the presence of error feedback to change the evaluation of constraints.
+This example syntax/statics definition showcases a few examples of this unfortunate behaviour.
+Without the commented error feedback messages the tests and the example are analysed just fine,
+but once any of the messages is uncommented something breaks (after a rebuild).
+In the compiler construction lab the observation that inequalities in constraints seem to be at least partially responsible for this,
+but this also sometimes breaks if no inequalities are involved.
+But even then, the (error) feedback should not influence the constraint evaluation... 
+The documentation does not mention this (at least I didn't find it here https://www.spoofax.dev/references/statix/basic-constraints/#messages)
+
+*/
+
+signature
+  sorts
+    TYPE
+    IDTYPE
+  
+  constructors
+    NONE : TYPE
+    CLASS : scope * ID -> TYPE
+    C : TYPE -> IDTYPE
+    V : TYPE -> IDTYPE
+  
+  name-resolution
+    labels S
+  relations
+    type : ID -> IDTYPE
+
+rules
+  
+  programOk : Start
+  programOk(Seq(decls, stmts)) :- {s}
+    new s,
+    declareGlobals(s),
+    declsOk(s, decls),
+    stmtsOk(s, stmts).
+
+rules
+  
+  obj  : scope -> TYPE
+  bool : scope -> TYPE
+  int  : scope -> TYPE
+  obj(s) = T :- 
+    typeOfType(s, "obj") == T@CLASS(_, "obj").
+  bool(s) = T :- 
+    typeOfType(s, "bool") == T@CLASS(_, "bool").
+  int(s) = T :- 
+    typeOfType(s, "int") == T@CLASS(_, "int").
+  
+  declareGlobals : scope
+  declareGlobals(s) :- {obj bool int}
+    new obj bool int,
+    bool -S-> obj, int -S-> obj,
+    declareClass(s, "obj", obj),
+    declareClass(s, "bool", bool),
+    declareClass(s, "int", int).
+
+rules
+  
+  declOk : scope * Decl
+  declsOk maps declOk(*, list(*))
+  
+  stmtOk : scope * Stmt
+  stmtsOk maps stmtOk(*, list(*))
+  
+  parentOk : scope * TYPE
+  parentOk(s, PT@CLASS(p, pn)) :- {o I}
+    // this workaround seems to work (at least for != constraints),
+    // but in my chocopy implementation this does not always work
+    // int(s) == I, try { PT != I } | error $[Cannot exted [PT]],
+    int(s) != PT,// | error $[Cannot exted [PT]],
+    bool(s) != PT,// | error $[Cannot exted [PT]],
+    obj(s) == CLASS(o, _),
+    ancestor(p, o).
+    
+  
+  declOk(s, Class(id, super)) :- {class PT p}
+    typeOfType(s, super) == PT@CLASS(p ,_),
+    parentOk(s, PT),// | error $[Cannot extend [PT]],
+    new class, class -S-> p,
+    declareClass(s, id, class).
+  
+  declOk(s, Var(id, ty)) :- {T}
+    typeOfType(s, ty) == T,
+    declareVar(s, id, T).
+  
+  stmtOk(s, Bnd(id, e)) :- {T T'}
+    typeOfVar(s, id) == T,
+    typeOfExp(s, e) == T',
+    // (*)
+    compatible(s, T', T).// | error $[[T'] is not compatible with [T]].
+  
+  stmtOk(s, Exp(e)) :- {T}
+    typeOfExp(s, e) == T.
+
+rules
+  
+  typeOfExp : scope * Exp -> TYPE
+  typeOfExp(s, e@Id(id)) = T :-
+    typeOfVar(s, id) == T,
+    @e.type := T.
+  typeOfExp(s, e@None) = NONE() :-
+    @e.type := NONE().
+  typeOfExp(s, e@Int(_)) = I :-
+    int(s) == I,
+    @e.type := I.
+  typeOfExp(s, e@Op(l, r)) = I :-
+    int(s) == I,
+    // turns out this doesn't only happen when != is involved...
+    typeOfExp(s, l) == I,// | error $[Expected type [I]]@l,
+    typeOfExp(s, r) == I, // | error $[Expected type [I]]@r,
+    @e.type := I.
+
+rules
+  
+  subtype : scope * TYPE * TYPE
+  subtype(_, T, T).
+  subtype(s, NONE(), OBJ@CLASS(_, _)) :-
+    obj(s) == OBJ.
+  subtype(_, CLASS(c, cn), CLASS(p, pn)) :-
+    ancestor(c, p) | error $[Expected subtype of [pn], found [cn]].
+  
+  ancestor : scope * scope
+  ancestor(c, p) :-
+    query ()
+      filter S* and {p' :- p' == p}
+      min $ < S and true
+    in c |-> [_|_].
+  
+  compatible : scope * TYPE * TYPE
+  compatible(s, NONE(), T) :- {I B}
+    // again, this workaround seems to work,
+    // but once (*) is uncommented something breaks here too
+    int(s) == I, try { T != I } | error $[None not compatible with [T]],
+    bool(s) == B, try { T != B } | error $[None not compatible with [T]].
+    // this way also doesn't work
+    //T != int(s),// | error $[None not compatible with [T]],
+    //T != bool(s).// | error $[None not compatible with [T]].
+  compatible(s, T1, T2) :-
+    subtype(s, T1, T2)
+    // this error feedback causes trouble in my chocopy implementation,
+    // but maybe recursive types (e.g. lists) are needed for that
+      | error $[[T1] not compatible with [T2]].
+
+rules
+  declareVar : scope * ID * TYPE
+  declareVar(s, id, T) :-
+    !type[id, V(T)] in s,
+    resolveType(s, id) == [(_, (_, V(T)))]
+      | error $[Duplicate declaration of var [id]],
+    @id.type := T.
+  
+  typeOfVar : scope * ID -> TYPE
+  typeOfVar(s, id) = T :- {id'}
+    resolveType(s, id) == [(_, (id', V(T)))]
+      | error $[Undefined var [id]],
+    @id.type := T, @id.ref := id'.
+
+  declareClass : scope * ID * scope
+  declareClass(s, id, c) :- {C}
+    !type[id, C(C@CLASS(c, id))] in s,
+    resolveType(s, id) == [(_, (_, C(C)))]
+      | error $[Duplicate declaration of type [id]],
+    @id.type := C.
+  
+  resolveType : scope * ID -> list((path * (ID * IDTYPE)))
+  resolveType(s, id) = ps :-
+    query type
+      filter e and {id' :- id' == id}
+      min and true
+    in s |-> ps.
+  
+  typeOfType : scope * ID -> TYPE
+  typeOfType(s, id) = T :- {id'}
+    resolveType(s, id) == [(_, (id', C(T)))]
+      | error $[Undefined type [id]],
+    @id.type := T, @id.ref := id'.
+  

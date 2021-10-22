@@ -1,0 +1,34 @@
+module start
+
+context-free start-symbols
+
+  Start
+
+context-free sorts
+
+  Start
+  Exp
+
+context-free syntax
+
+  Exp.Int = NUM
+  Exp.Mul = <<Exp> * <Exp>> {left}
+  
+  Start.Exp = Exp
+
+lexical sorts ID NUM
+
+lexical syntax
+
+  ID = [a-zA-Z]+
+  NUM = [0-9]+
+
+  LAYOUT = [\ \n\v\f\r\t]
+
+lexical restrictions
+  ID  -/- [a-zA-Z]
+  NUM -/- [0-9]
+
+context-free restrictions
+
+  LAYOUT? -/- [\ \n\v\f\r\t\#]

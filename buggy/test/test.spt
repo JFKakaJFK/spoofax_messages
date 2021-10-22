@@ -1,0 +1,53 @@
+module test
+
+test syntax [[
+class A(obj)
+class B(A)
+
+a : A
+b : A
+
+i : int
+j : int
+
+a = b
+a = None
+42
+i = 42
+
+a
+None
+i * j
+]] parse succeeds
+   analysis succeeds
+
+test class def [[
+class A(obj)
+class B(A)
+]] analysis succeeds
+
+test bind [[
+a : obj
+i : int
+a = None
+i = 42
+]] analysis succeeds
+
+test op [[
+i : int
+i * i
+1 * i
+i * 1
+1 * 1
+]] analysis succeeds
+
+test subclasses [[
+class A(obj)
+class B(A)
+
+a : A
+b : B
+b = None
+a = b
+a = a
+]] analysis succeeds
